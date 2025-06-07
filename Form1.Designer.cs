@@ -119,10 +119,19 @@ namespace DummyFoldersSync
             {
                 Name = "progressBar",
                 Location = new Point(130, 145),
-                Width = 430,
+                Width = 370,
                 Height = 30
             };
             this.Controls.Add(progressBar);
+
+            Label lblCopiedSize = new Label
+            {
+                Name = "lblCopiedSize",
+                Text = "",
+                Location = new Point(505, 152),
+                AutoSize = true
+            };
+            this.Controls.Add(lblCopiedSize);
 
             // Log area
             ListView logView = new ListView

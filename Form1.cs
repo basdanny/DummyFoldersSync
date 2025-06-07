@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -17,7 +18,7 @@ namespace DummyFoldersSync
             InitializeCustomComponents();
         }
 
-        
+
         private void BtnBrowseSource_Click(object sender, EventArgs e)
         {
             using (FolderBrowserDialog folderDialog = new FolderBrowserDialog())
@@ -81,6 +82,7 @@ namespace DummyFoldersSync
             Button btnStart = (Button)Controls["btnStart"] ?? throw new InvalidOperationException("Start button not found.");
             ProgressBar progressBar = (ProgressBar)Controls["progressBar"] ?? throw new InvalidOperationException("Progress bar not found.");
             ListView logView = (ListView)Controls["logView"] ?? throw new InvalidOperationException("Log view not found.");
+            Label lblCopiedSize = (Label)Controls["lblCopiedSize"] ?? throw new InvalidOperationException("Copied size label not found.");
 
             btnStart.Enabled = false;
             btnStart.Text = "Syncing...";
@@ -89,15 +91,16 @@ namespace DummyFoldersSync
             try
             {
                 _cancellationTokenSource = new CancellationTokenSource();
-                
+
                 // Count total files to process for progress reporting
                 int totalFiles = Directory.GetFiles(sourceFolder, "*.*", SearchOption.AllDirectories).Length;
                 progressBar.Maximum = totalFiles;
                 progressBar.Value = 0;
+                lblCopiedSize.Text = "";
 
                 // Start the synchronization
-                await Task.Run(() => SyncFolders(sourceFolder, destFolder, logView, progressBar, _cancellationTokenSource.Token));
-                
+                await Task.Run(() => SyncFolders(sourceFolder, destFolder, logView, progressBar, lblCopiedSize, _cancellationTokenSource.Token));
+
                 MessageBox.Show("Synchronization completed successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (OperationCanceledException)
@@ -116,26 +119,16 @@ namespace DummyFoldersSync
             }
         }
 
-        private void SyncFolders(string sourceFolder, string destFolder, ListView logView, ProgressBar progressBar, CancellationToken cancellationToken)
+        private void SyncFolders(string sourceFolder, string destFolder, ListView logView, ProgressBar progressBar, Label lblCopiedSize, CancellationToken cancellationToken)
         {
+            const int bufferSize = 1_048_576;
             int processedFiles = 0;
+            BigInteger copiedSizeKB = 0;
 
             // Get all source directories including the root
             var sourceDirs = Directory.GetDirectories(sourceFolder, "*", SearchOption.AllDirectories)
                 .Concat(new[] { sourceFolder });
 
-            // Create directory structure in destination
-            foreach (string sourceDir in sourceDirs)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                string destDir = sourceDir.Replace(sourceFolder, destFolder);
-                if (!Directory.Exists(destDir))
-                {
-                    Directory.CreateDirectory(destDir);
-                    LogOperation("Created Dir", destDir, logView);
-                }
-            }
 
             // Copy files that don't exist in destination
             foreach (string sourceDir in sourceDirs)
@@ -143,28 +136,46 @@ namespace DummyFoldersSync
                 cancellationToken.ThrowIfCancellationRequested();
 
                 string destDir = sourceDir.Replace(sourceFolder, destFolder);
+
+                // Create directory in the destination
+                CreateDirIfNeeded(destDir, logView);
+
                 string[] sourceFiles = Directory.GetFiles(sourceDir);
 
                 foreach (string sourceFile in sourceFiles)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    
+
                     string destFile = Path.Combine(destDir, Path.GetFileName(sourceFile));
-                    
+
                     if (!File.Exists(destFile))
                     {
-                        File.Copy(sourceFile, destFile);
+                        using (FileStream sourceStream = File.OpenRead(sourceFile))
+                        using (FileStream destStream = File.Create(destFile))
+                        {
+                            copiedSizeKB += sourceStream.Length / 1024;
+                            sourceStream.CopyTo(destStream, bufferSize);
+                        }
                         LogOperation("Copied", destFile, logView);
                     }
                     else
                     {
                         LogOperation("Skipped", destFile, logView);
                     }
-                    
+
                     // Update progress
                     processedFiles++;
-                    UpdateProgress(progressBar, processedFiles);
+                    UpdateProgress(progressBar, processedFiles, lblCopiedSize, copiedSizeKB);
                 }
+            }
+        }
+
+        private void CreateDirIfNeeded(string destDir, ListView logView)
+        {
+            if (!Directory.Exists(destDir))
+            {
+                Directory.CreateDirectory(destDir);
+                LogOperation("Created Dir", destDir, logView);
             }
         }
 
@@ -181,16 +192,18 @@ namespace DummyFoldersSync
             logView.Items[logView.Items.Count - 1].EnsureVisible();
         }
 
-        private void UpdateProgress(ProgressBar progressBar, int value)
+        private void UpdateProgress(ProgressBar progressBar, int value, Label lblCopiedSize, BigInteger copiedSizeKB)
         {
             if (this.InvokeRequired)
             {
-                this.Invoke(new Action(() => UpdateProgress(progressBar, value)));
+                this.Invoke(new Action(() => UpdateProgress(progressBar, value, lblCopiedSize, copiedSizeKB)));
                 return;
             }
 
             if (value <= progressBar.Maximum)
                 progressBar.Value = value;
+
+            lblCopiedSize.Text = $"{((double)copiedSizeKB / 1024.0):F1} MB";
         }
     }
 }
