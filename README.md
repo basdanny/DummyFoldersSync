@@ -5,11 +5,17 @@ Only the files that do not exist in the destination folder will be copied. Exist
 ## Build (.NET)
 Run from terminal,  
 For debug:  
-`dotnet build`  
+```powershell
+dotnet build
+```  
 For release (publish):  
-`dotnet publish -c Release -r win-x64`  
+```powershell
+dotnet publish -c Release -r win-x64
+```  
 or with additional flags...  
-`dotnet publish -c Release -r win-x64 -p:PublishSingleFile=true -p:PublishTrimmed=true --self-contained false`
+```powershell
+dotnet publish -c Release -r win-x64 -p:PublishSingleFile=true --self-contained false
+```
 
 #### Prerequisites
 .NET 8.x
